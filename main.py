@@ -43,7 +43,7 @@ df.describe()
 
 
 # ============================================================
-#  SIMPLE VISUALISATION BLOCK — Nutrition5K Dataset
+#  VISUALISATION of Nutrition5K Dataset
 # ============================================================
 
 import matplotlib.pyplot as plt
@@ -102,7 +102,7 @@ plt.show()
 
 
 # 5. BAR CHART — Top 10 Largest Calorie Errors (Using INGREDIENTS)
-# ------------------------------------------------------------
+
 top10 = df.nlargest(10, "cal_error")[["dish_id","cal_error"]]
 
 plt.figure(figsize=(10,6))
@@ -122,7 +122,6 @@ plt.show()
 
 
 
-# ------------------------------------------------------------
 # 6. BAR CHART — Under vs Over Predictions 
 
 df["bias"] = df["pred_cal"] - df["actual_cal"]
@@ -137,3 +136,154 @@ plt.title("Prediction Accuracy Categories")
 plt.ylabel("Count")
 plt.xlabel("Category")
 plt.show()
+
+
+
+
+
+print("\n" + "="*60)
+print("EXTENDED QUANTITATIVE EVALUATION")
+print("="*60)
+
+# ------------------------------------------------------------
+# 1️⃣ MAPE (Mean Absolute Percentage Error)
+# ------------------------------------------------------------
+print("\n📊 MAPE (Mean Absolute Percentage Error)")
+print("-" * 60)
+
+# MAPE calculation - exclude zero actual values to avoid division by zero
+def calculate_mape(actual, error):
+    """Calculate MAPE excluding zero actual values"""
+    mask = actual != 0
+    if mask.sum() == 0:
+        return np.nan
+    return (error[mask].abs() / actual[mask] * 100).mean()
+
+mape_cal = calculate_mape(df["actual_cal"], df["cal_error"])
+mape_fat = calculate_mape(df["actual_fat"], df["fat_error"])
+mape_carb = calculate_mape(df["actual_carb"], df["carb_error"])
+mape_prot = calculate_mape(df["actual_prot"], df["prot_error"])
+
+print(f"Calories:    {mape_cal:.2f}%")
+print(f"Fat:         {mape_fat:.2f}%")
+print(f"Carbs:       {mape_carb:.2f}%")
+print(f"Protein:     {mape_prot:.2f}%")
+
+# Print how many zero values were excluded
+print("\nNote: MAPE excludes dishes with zero actual values:")
+print(f"  Calories with 0g:  {(df['actual_cal'] == 0).sum()} dishes excluded")
+print(f"  Fat with 0g:       {(df['actual_fat'] == 0).sum()} dishes excluded")
+print(f"  Carbs with 0g:     {(df['actual_carb'] == 0).sum()} dishes excluded")
+print(f"  Protein with 0g:   {(df['actual_prot'] == 0).sum()} dishes excluded")
+
+# ------------------------------------------------------------
+# 2️⃣ RMSE (Root Mean Squared Error)
+# ------------------------------------------------------------
+print("\n📊 RMSE (Root Mean Squared Error)")
+print("-" * 60)
+
+rmse_cal = np.sqrt((df["cal_error"] ** 2).mean())
+rmse_fat = np.sqrt((df["fat_error"] ** 2).mean())
+rmse_carb = np.sqrt((df["carb_error"] ** 2).mean())
+rmse_prot = np.sqrt((df["prot_error"] ** 2).mean())
+
+print(f"Calories:    {rmse_cal:.2f} kcal")
+print(f"Fat:         {rmse_fat:.2f} g")
+print(f"Carbs:       {rmse_carb:.2f} g")
+print(f"Protein:     {rmse_prot:.2f} g")
+
+# ------------------------------------------------------------
+# 3️⃣ Percentage-Based Accuracy Bands (Calories Only)
+# ------------------------------------------------------------
+print("\n📊 Percentage-Based Accuracy Bands (Calories)")
+print("-" * 60)
+
+# Calculate percentage error for calories (exclude zero actuals)
+df["cal_pct_error"] = df.apply(
+    lambda row: (abs(row["cal_error"]) / row["actual_cal"] * 100) if row["actual_cal"] != 0 else np.nan,
+    axis=1
+)
+
+# Count within bands (excluding NaN from zero actuals)
+valid_pct_errors = df["cal_pct_error"].dropna()
+total_valid = len(valid_pct_errors)
+
+within_10pct = (valid_pct_errors <= 10).sum() / total_valid * 100
+within_20pct = (valid_pct_errors <= 20).sum() / total_valid * 100
+within_30pct = (valid_pct_errors <= 30).sum() / total_valid * 100
+
+print(f"Within ±10%:  {within_10pct:.1f}% of dishes")
+print(f"Within ±20%:  {within_20pct:.1f}% of dishes")
+print(f"Within ±30%:  {within_30pct:.1f}% of dishes")
+print(f"\n(Based on {total_valid} dishes with non-zero actual calories)")
+
+# ------------------------------------------------------------
+# 4️⃣ Simple vs Mixed Dish Analysis
+# ------------------------------------------------------------
+print("\n📊 Simple vs Mixed Dish Analysis (Calories)")
+print("-" * 60)
+
+# Count ingredients using semicolons
+df["ingredient_count"] = df["actual_ingredients"].apply(
+    lambda x: x.count(";") + 1 if x else 0
+)
+
+# Classify dishes
+df["dish_complexity"] = df["ingredient_count"].apply(
+    lambda x: "Simple (1-3 ingredients)" if x <= 3 else "Mixed (4+ ingredients)"
+)
+
+# Group analysis
+simple_dishes = df[df["dish_complexity"] == "Simple (1-3 ingredients)"]
+mixed_dishes = df[df["dish_complexity"] == "Mixed (4+ ingredients)"]
+
+simple_count = len(simple_dishes)
+mixed_count = len(mixed_dishes)
+simple_mae = simple_dishes["cal_error"].abs().mean()
+mixed_mae = mixed_dishes["cal_error"].abs().mean()
+
+print(f"\nSimple dishes (1-3 ingredients):")
+print(f"  Count:  {simple_count}")
+print(f"  MAE:    {simple_mae:.2f} kcal")
+
+print(f"\nMixed dishes (4+ ingredients):")
+print(f"  Count:  {mixed_count}")
+print(f"  MAE:    {mixed_mae:.2f} kcal")
+
+# T-test comparing calorie errors between groups
+from scipy.stats import ttest_ind
+
+t_stat, p_value = ttest_ind(
+    simple_dishes["cal_error"].abs(),
+    mixed_dishes["cal_error"].abs()
+)
+
+print(f"\nIndependent t-test:")
+print(f"  t-statistic: {t_stat:.4f}")
+print(f"  p-value:     {p_value:.4f}")
+
+if p_value < 0.05:
+    print(f"  Result: Statistically significant difference (p < 0.05)")
+else:
+    print(f"  Result: No statistically significant difference (p ≥ 0.05)")
+
+
+print("\n📋 DATA PREPARATION SUMMARY")
+print("-" * 60)
+
+total_dishes = len(df)
+
+print(f"\nTotal dishes analysed: {total_dishes}")
+print("\nData cleaning steps applied:")
+print("  • Duplicate records removed")
+print("  • Rows with missing nutrient values (NaN) removed")
+print("  • All numeric columns validated and converted")
+print("\nEvaluation approach:")
+print("  • Analysis conducted at plate (dish) level")
+print("  • Ground truth: Lab-validated nutritional measurements")
+print("  • Predictions: Computer vision model estimates")
+print("  • Error metric: Prediction minus actual values")
+
+print("\n" + "="*60)
+print("EVALUATION COMPLETE")
+print("="*60 + "\n")
